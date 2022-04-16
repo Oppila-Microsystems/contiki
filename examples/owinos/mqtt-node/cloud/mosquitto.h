@@ -51,16 +51,18 @@
 void publish_alarm(sensor_val_t *sensor);
 void publish_event(sensor_values_t *msg);
 /*---------------------------------------------------------------------------*/
-//#define DEFAULT_CONF_AUTH_TOKEN       ""  /* Not used */
-//#define DEFAULT_CONF_AUTH_USER        "ranjitha"
-
 #define DEFAULT_ORG_CONF_ID           "owinos:001"
 
 #define DEFAULT_TOPIC_STR             "sensor"
 #define DEFAULT_TOPIC_LONG            "actuator"
 
 /*---------------------------------------------------------------------------*/
-#define MQTT_DEMO_CONF_BROKER_IP_ADDR "::ffff:c0a8:72"
+
+/* Convert the mosquitto broker ipv4 address into ipv6 and provide the ipv6 
+ * address to MQTT_DEMO_CONF_BROKER_IP_ADDR
+ */
+
+#define MQTT_DEMO_CONF_BROKER_IP_ADDR ""
 #define CMD_LED                       LEDS_RED
 
 /* We are using the device Client ID to publish to a topic as:
