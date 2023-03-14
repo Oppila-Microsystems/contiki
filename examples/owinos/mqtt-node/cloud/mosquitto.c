@@ -41,6 +41,8 @@
 #include "mqtt-sensors.h"
 #include "mqtt-res.h"
 #include "mosquitto.h"
+#include "pwm.h"
+#include "sys/clock.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -58,6 +60,10 @@ enum {
   PUB_TOPIC_RAW,
   PUB_TOPIC_STRING
 };
+/*---------------------------------------------------------------------------*/
+#define MAX_KEY_LENGTH 20
+#define MAX_VALUE_LENGTH 20
+#define MAX_ENTRIES 3
 /*---------------------------------------------------------------------------*/
 #if DEFAULT_SENSORS_NUM
 static char *buf_ptr;
@@ -221,181 +227,66 @@ static void
 mosquitto_pub_handler(const char *topic, uint16_t topic_len, const uint8_t *chunk,
             uint16_t chunk_len)
 {
-  uint8_t i;
-  uint16_t aux;
-
-  PRINTF("Mosquitto: Pub Handler, topic='%s' (len=%u), chunk='%s', chunk_len=%u\n",
-         topic, topic_len, chunk, chunk_len);
-
-  /* Most of the commands follow a boolean-logic at least */
-  if(chunk_len <= 0) {
-    PRINTF("Mosquitto: Chunk should be at least a single digit integer or string\n");
-    return;
-  }
-
-  /* This is a command event, it uses "1" and "0" strings for true or false
-   * As default we use the "/lv" request upon subscribing, we expect an numeric
-   * string as chunk
-   */
-  if(strncmp(topic, cmd_topic, CONFIG_SUB_CMD_TOPIC_LEN) == 0) {
-
-    /* Add an extra byte for the level separator */
-    aux = strlen(DEFAULT_TOPIC_LONG) + MOSQUITTO_LABEL_LEN + 1;
-
-    /* Toggle a given LED */
-    if(strncmp((const char *)&topic[aux], DEFAULT_SUBSCRIBE_CMD_LEDS,
-               strlen(DEFAULT_SUBSCRIBE_CMD_LEDS)) == 0) {
-      PRINTF("Mosquitto: Command received --> toggle LED\n");
-
-      if(strncmp((const char *)chunk, "1", 1) == 0) {
-        leds_on(CMD_LED);
-      } else if(strncmp((const char *)chunk, "0", 1) == 0) {
-        leds_off(CMD_LED);
-      } else {
-        PRINTF("Mosquitto: invalid command argument (expected boolean)!\n");
-      }
-
-      return;
-
-    /* Restart the device */
-    } else if(strncmp((const char *)&topic[aux], DEFAULT_SUBSCRIBE_CMD_REBOOT,
-               strlen(DEFAULT_SUBSCRIBE_CMD_REBOOT)) == 0) {
-      PRINTF("Mosquitto: Command received --> reboot\n");
-
-      /* This is fixed to check only "true" arguments */
-      if(strncmp((const char *)chunk, "1", 1) == 0) {
-        sys_ctrl_reset();
-      } else {
-        PRINTF("Mosquitto: invalid command argument (expected only 'true')!\n");
-      }
-
-      return;
-
-    /* Enable or disable external sensors */
-    } else if(strncmp((const char *)&topic[aux], DEFAULT_SUBSCRIBE_CMD_SENSOR,
-               strlen(DEFAULT_SUBSCRIBE_CMD_SENSOR)) == 0) {
-      PRINTF("Mosquitto: Command received --> enable/disable sensor\n");
-
-      if(strncmp((const char *)chunk, "1", 1) == 0) {
-        activate_sensors(0x01);
-      } else if(strncmp((const char *)chunk, "0", 1) == 0) {
-        activate_sensors(0x00);
-      } else {
-        PRINTF("Mosquitto: invalid command argument (expected boolean)!\n");
-      }
-
-      return;
-
-    /* This is a configuration event
-     * As currently Contiki's MQTT driver does not support more than one SUBSCRIBE
-     * we are handling both commands and configurations in the same "cmd" topic
-     * We expect the configuration payload to follow the next syntax:
-     * {"name":"update_period","value":61}
-     */
-
-    /* Change the update period */
-    } else if(strncmp((const char *)&topic[aux], DEFAULT_SUBSCRIBE_CMD_EVENT,
-               strlen(DEFAULT_SUBSCRIBE_CMD_EVENT)) == 0) {
-
-      /* Take integers as configuration value */
-      aux = atoi((const char*) chunk);
-
-      if(mqtt_check_int_chunk_len(aux, chunk_len)) {
-        PRINTF("Mosquitto: chunk lenght doesn't match integer\n");
-        return;
-      }
-
-      /* Check for allowed values */
-      if((aux < DEFAULT_UPDATE_PERIOD_MIN) || (aux > DEFAULT_UPDATE_PERIOD_MAX)) {
-        PRINTF("Mosquitto: update interval should be between %u and %u\n", 
-                DEFAULT_UPDATE_PERIOD_MIN, DEFAULT_UPDATE_PERIOD_MAX);
-        return;
-      }
-
-      conf.pub_interval_check = aux;
-      PRINTF("Mosquitto: New update interval --> %u secs\n", conf.pub_interval_check);
-      // mqtt_write_config_to_flash();
-      return;
-    }
-#if DEFAULT_SENSORS_NUM
-    /* Change a sensor's threshold, skip is `sensor_config` is empty */
-    for(i=0; i<SENSORS_NAME(MQTT_SENSORS, _sensors.num); i++) {
-
-      if((strlen(SENSORS_NAME(MQTT_SENSORS,_sensors.sensor[i].sensor_config))) &&
-        (strncmp((const char *)&topic[aux], SENSORS_NAME(MQTT_SENSORS, _sensors.sensor[i].sensor_config),
-                      strlen(SENSORS_NAME(MQTT_SENSORS, _sensors.sensor[i].sensor_config))) == 0)) {
-
-        /* Take integers as configuration value */
-        aux = atoi((const char*) chunk);
-
-        if(mqtt_check_int_chunk_len(aux, chunk_len)) {
-          PRINTF("Mosquitto: chunk lenght doesn't match integer\n");
-          return;
+	int i,j=1;
+	int entry = 0;
+	char keys[MAX_ENTRIES][MAX_KEY_LENGTH];
+	char values[MAX_ENTRIES][MAX_VALUE_LENGTH];
+       
+        char *token = strtok(chunk, "{\":,}");
+	while (token != NULL) {
+		if (strcmp(token, "CONT1") == 0) {
+            		strcpy(keys[entry], token);
+            		token = strtok(NULL, "{\":,}");
+            		snprintf(values[entry], MAX_VALUE_LENGTH, "%s", (token));
+    			if(strcmp(values[entry], "1")==0){
+				PRINTF("entered if as value is one\n");
+				leds_on(CMD_LED);
+			}else if(strcmp(values[entry], "0")==0){
+				PRINTF("entered else if as value is zero\n");
+				leds_off(CMD_LED);
+			}else {
+       				PRINTF("Mosquitto: invalid command argument (expected boolean)!\n");
+      			}
+            		entry++;
+       		} 
+		else if (strcmp(token, "CONT2") == 0) {
+            		strcpy(keys[entry], token);
+            		token = strtok(NULL, "{\":,}");
+            		snprintf(values[entry], MAX_VALUE_LENGTH, "%d", atoi(token));
+			PRINTF("pwm value %ls\n", values[entry]);
+			if(values[entry]!= "NULL")
+			{
+				for(j=values[entry];j<100;j++)
+				{
+				pwm_enable(16000,j,0,1,0);
+				pwm_start(1,0,0,4);
+				PRINTF("entering if and the value is----------///// %ls\n", values[entry]);
+				clock_delay_usec(24464);
+				}
+			}
+			else
+				PRINTF("entering else if and the value is %ls\n", values[entry]);
+            		entry++;
+        	}
+		else if (strcmp(token, "CONT3") == 0) {
+	            strcpy(keys[entry], token);
+        	    token = strtok(NULL, "{\":,}");
+            	    snprintf(values[entry], MAX_VALUE_LENGTH, "%d", atoi(token));
+           	     entry++;
+        	}
+		token = strtok(NULL, "{\":,}");		
+	}
+	
+	PRINTF("{");
+	for (int i = 0; i < entry; i++) {
+        PRINTF("\"%s\": \"%s\"", keys[i], values[i]);
+        if (i < entry - 1) {
+            PRINTF(", ");
         }
-
-        if((aux < SENSORS_NAME(MQTT_SENSORS,_sensors.sensor[i].min)) || 
-          (aux > SENSORS_NAME(MQTT_SENSORS,_sensors.sensor[i].max))) {
-          PRINTF("Mosquitto: %s threshold should be between %d and %d\n",
-                 SENSORS_NAME(MQTT_SENSORS,_sensors.sensor[i].sensor_name),
-                 SENSORS_NAME(MQTT_SENSORS,_sensors.sensor[i].min),
-                 SENSORS_NAME(MQTT_SENSORS,_sensors.sensor[i].max));
-          return;
-        }
-
-        /* We have now a valid threshold value, the logic is simple: each
-         * variable has a `thresh` to configure a limit over the given value,
-         * and `thresl` which respectively checks for values below this limit.
-         * As a convention we are expecting `sensor_config` strings ending in
-         * `_thresh` or `_thresl`.  The check below "should" be "safe" as we are
-         * sure it matches an expected string.
-         */
-
-        if(strstr((const char *)topic, "_thresh") != NULL) {
-          SENSORS_NAME(MQTT_SENSORS,_sensors.sensor[i].over_threshold) = aux;
-          PRINTF("Mosquitto: New %s over threshold --> %u\n",
-                 SENSORS_NAME(MQTT_SENSORS,_sensors.sensor[i].sensor_name),
-                 SENSORS_NAME(MQTT_SENSORS,_sensors.sensor[i].over_threshold));
-        } else if(strstr((const char *)topic, "_thresl") != NULL) {
-          SENSORS_NAME(MQTT_SENSORS,_sensors.sensor[i].below_threshold) = aux;
-          PRINTF("Mosquitto: New %s below threshold --> %u\n",
-                 SENSORS_NAME(MQTT_SENSORS,_sensors.sensor[i].sensor_name),
-                 SENSORS_NAME(MQTT_SENSORS,_sensors.sensor[i].below_threshold));
-        } else {
-          PRINTF("Mosquitto: Expected threshold configuration name to end ");
-          PRINTF("either in thresh or thresl\n");
-        }
-
-        return;
-      }
     }
-#endif /* DEFAULT_SENSORS_NUM */
+	
+    PRINTF("}\n");
 
-    /* We are now checking for any string command expected by the subscribed
-     * sensor module
-     */
-#if DEFAULT_COMMANDS_NUM
-    for(i=0; i<SENSORS_NAME(MQTT_SENSORS, _commands.num); i++) {
-
-      if(strncmp((const char *)&topic[aux], 
-          SENSORS_NAME(MQTT_SENSORS, _commands.command[i].command_name),
-          strlen(SENSORS_NAME(MQTT_SENSORS, _commands.command[i].command_name))) == 0) {
-
-        /* Take integers as argument value */
-        aux = atoi((const char*) chunk);
-
-        /* Invoke the command handler */
-        SENSORS_NAME(MQTT_SENSORS,_commands.command[i].cmd(aux));
-        return;
-      }
-    }
-#endif /* DEFAULT_COMMANDS_NUM */
-
-    /* Invalid configuration topic, we should have returned before */
-    PRINTF("Mosquitto: Configuration/Command parameter not recognized\n");
-
-  } else {
-    PRINTF("Mosquitto: Incorrect topic or chunk len. Ignored\n");
-  }
 }
 /*---------------------------------------------------------------------------*/
 static void
