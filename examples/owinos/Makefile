@@ -1,8 +1,8 @@
 DEFINES+=PROJECT_CONF_H=\"project-conf.h\"
 
-CONTIKI_PROJECT += test-ldr-sensor test-bmp180 test-adxl345
+CONTIKI_PROJECT += test-ldr-sensor test-bmp180 test-adxl345 photo_sensor
 
-CONTIKI_TARGET_SOURCEFILES += adc-sensors.c bmp180.c adxl345.c
+CONTIKI_TARGET_SOURCEFILES += adc-sensors.c bmp180.c adxl345.c owinos-adc.c
 
 all: $(CONTIKI_PROJECT)
 
